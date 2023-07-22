@@ -48,12 +48,10 @@ def _load_config_file(filepath):
     try:
         global configuration
         configuration = json.loads(config_content)
-        logging.info(
-            "successfully loaded configuration file: {}".format(filepath)
-        )
+        logging.info(f"successfully loaded configuration file: {filepath}")
         return True
     except json.decoder.JSONDecodeError as e:
-        logging.error("Failed to load configuration file: {}".format(filepath))
+        logging.error(f"Failed to load configuration file: {filepath}")
         logging.error(e)
 
     return False
@@ -63,29 +61,28 @@ def _create_empty_config_file_if_not_exists(directory):
     """
     create empty configuration file with a given path
     """
-    config_file = "{}/codelite-remote.json".format(directory)
+    config_file = f"{directory}/codelite-remote.json"
     if os.path.exists(config_file):
         return
 
     # create a default configuration file
-    logging.info("creating empty configuration file: {}".format(config_file))
+    logging.info(f"creating empty configuration file: {config_file}")
     try:
         # Create the directory in the path
         os.makedirs(directory, exist_ok=True)
-        logging.info("successfully created directory {}".format(directory))
+        logging.info(f"successfully created directory {directory}")
     except OSError as error:
-        logging.debug("directory {} already exists".format(directory))
+        logging.debug(f"directory {directory} already exists")
 
-    fp = open(config_file, "w")
-    fp.write("{}")
-    fp.close()
+    with open(config_file, "w") as fp:
+        fp.write("{}")
 
 
 def load_configuration():
     # We first try to load the configuration file for the current workspace
     # by default this will be the `WORKSPACE_PATH/.codelite`
     curdir = os.path.dirname(__file__)
-    local_config_file = "{}/codelite-remote.json".format(curdir)
+    local_config_file = f"{curdir}/codelite-remote.json"
 
     # try to load the local configuration first
     config_loaded = _load_config_file(local_config_file)
@@ -94,7 +91,7 @@ def load_configuration():
         # try loading the global one (`~/.codelite/codelite-remote.json`)
         # if a global configuration file does not exist, create an empty one
         home_dir = os.path.expandvars("$HOME/.codelite")
-        global_config_file = "{}/codelite-remote.json".format(home_dir)
+        global_config_file = f"{home_dir}/codelite-remote.json"
         _create_empty_config_file_if_not_exists(home_dir)
         config_loaded = _load_config_file(global_config_file)
     return config_loaded
@@ -102,11 +99,10 @@ def load_configuration():
 
 def write_file(cmd):
     try:
-        fp = open(cmd["path"], "w")
-        fp.write(cmd["content"])
-        fp.close()
+        with open(cmd["path"], "w") as fp:
+            fp.write(cmd["content"])
     except Exception as e:
-        logging.error("write_file error: {}".format(e))
+        logging.error(f"write_file error: {e}")
     print_message_terminator()
 
 
@@ -157,7 +153,7 @@ def on_exec(cmd):
         if env_dict.get(name, -1) == -1:
             env_dict[name] = value
         else:
-            env_dict[name] = "{}:{}".format(value, env_dict[name])
+            env_dict[name] = f"{value}:{env_dict[name]}"
 
     working_directory = expand_vars(cmd["wd"])
     command = expand_vars(cmd["cmd"])
@@ -213,10 +209,7 @@ def get_files(cmd):
     if len(current_batch) > 0:
         files.add(current_batch)
 
-    if len(files) == 0:
-        return None
-    else:
-        return files
+    return None if not files else files
 
 
 def on_find_files(cmd):
@@ -258,8 +251,7 @@ def on_find_in_files(cmd):
     {"command":"find","file_extensions":["*.cpp","*.hpp","*.h"],"root_dir":"/home/eran/devl/codelite","find_what":"wxStringSet_t","icase": true,"whole_word": false}
     """
 
-    files = get_files(cmd)
-    if files:
+    if files := get_files(cmd):
         # get list of files and run grep on each one of them
         grep_command = get_grep_command(cmd)
         for file in files:
@@ -276,8 +268,7 @@ def on_replace_in_files(cmd):
 
     {"command":"replace","file_extensions":["*.cpp","*.hpp","*.h"],"root_dir":"$HOME/devl/codelite","find_what":"wxStringSet_t","icase": true,"whole_word": false, "replace_with": "std::unordered_set<wxString>"}
     """
-    files = get_files(cmd)
-    if files:
+    if files := get_files(cmd):
         # build sed command
         find_what: str = cmd["find_what"]
         replace_with: str = cmd["replace_with"]
@@ -336,9 +327,9 @@ def locate_in_path(name, path, versions_arr, ext):
 
     ## first try with suffix
     for version_number in versions_arr:
-        fullpath = "{}/{}-{}".format(path, name, version_number)
+        fullpath = f"{path}/{name}-{version_number}"
         if len(ext) > 0:
-            fullpath = "{}.{}".format(fullpath, ext)
+            fullpath = f"{fullpath}.{ext}"
 
         if os.path.exists(fullpath):
             return fullpath
@@ -349,9 +340,9 @@ def locate_in_path(name, path, versions_arr, ext):
     if len(ext) > 0:
         fullpath = f"{fullpath}.{ext}"
 
-    logging.debug("Checking path: {}".format(fullpath))
+    logging.debug(f"Checking path: {fullpath}")
     if os.path.isfile(fullpath) or os.path.islink(fullpath):
-        logging.debug("found: {}".format(fullpath))
+        logging.debug(f"found: {fullpath}")
         return fullpath
     return ""
 
@@ -385,10 +376,10 @@ def on_find_path(cmd):
     dirs = dir_part.split("/")
 
     while len(dirs) > 0:
-        fullpath = "{}/{}".format("/".join(dirs), dir_name)
-        logging.debug("checking for dir {}".format(fullpath))
+        fullpath = f'{"/".join(dirs)}/{dir_name}'
+        logging.debug(f"checking for dir {fullpath}")
         if os.path.exists(fullpath):
-            print("{}".format(fullpath))
+            print(f"{fullpath}")
             break
 
         # remove last element
@@ -407,20 +398,18 @@ def locate(cmd):
     path = os.path.expandvars(path)
 
     # append $PATH content
-    path = "{}{}{}".format(path, os.path.pathsep, os.path.expandvars("$PATH"))
+    path = f'{path}{os.path.pathsep}{os.path.expandvars("$PATH")}'
 
     paths = path.split(os.path.pathsep)
     name = cmd["name"]
     ext = cmd["ext"]
     versions_arr = cmd["versions"]
 
-    logging.debug(
-        "locate: searching for: {}, using paths: {}".format(name, paths)
-    )
+    logging.debug(f"locate: searching for: {name}, using paths: {paths}")
     for p in paths:
         fullpath = locate_in_path(name, p, versions_arr, ext)
         if len(fullpath) > 0:
-            logging.debug("locate: match found: {}".format(fullpath))
+            logging.debug(f"locate: match found: {fullpath}")
             print(fullpath)
             break
     logging.debug("locate: No match found :(")
@@ -443,18 +432,16 @@ def main_loop():
     # load the configruration file
     # it should be located next to this file
     curdir = os.path.dirname(__file__)
-    log_file = "{}/codelite-remote.{}.log".format(curdir, args.context.lower())
+    log_file = f"{curdir}/codelite-remote.{args.context.lower()}.log"
 
     # configure the log module
     logging.basicConfig(
         filename=log_file,
-        format="%(asctime)s: {}: %(levelname)s: %(message)s".format(
-            args.context.upper()
-        ),
+        format=f"%(asctime)s: {args.context.upper()}: %(levelname)s: %(message)s",
         level=logging.ERROR,
     )
     logging.info("started")
-    logging.info("current working directory is set to: {}".format(curdir))
+    logging.info(f"current working directory is set to: {curdir}")
 
     load_configuration()
 
@@ -476,7 +463,7 @@ def main_loop():
         try:
             text = input()
             text = text.strip()
-            if text == "exit" or text == "bye" or text == "quit" or text == "q":
+            if text in ["exit", "bye", "quit", "q"]:
                 logging.info("Bye!")
                 exit(0)
 
@@ -484,13 +471,13 @@ def main_loop():
                 continue
 
             # split the command line by spaces
-            logging.info("processing command: {}".format(text))
+            logging.info(f"processing command: {text}")
             command = json.loads(text)
             func = handlers.get(command["command"], None)
             if func is not None:
                 func(command)
             else:
-                logging.error("unknown command '{}'".format(command["command"]))
+                logging.error(f"""unknown command '{command["command"]}'""")
         except Exception as e:
             error_count += 1
             print(e)

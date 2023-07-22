@@ -64,7 +64,7 @@ try:
     # detect how to invoke ptype
     ptype_cmd = 'ptype/mtr'
     try:
-        gdb.execute(ptype_cmd + ' void', True, True)
+        gdb.execute(f'{ptype_cmd} void', True, True)
     except RuntimeError:
         ptype_cmd = 'ptype'
 except TypeError:
@@ -80,7 +80,7 @@ except ImportError:
         # Work around non-existing gdb.parse_and_eval as in released 7.0
         gdb.execute("set logging redirect on")
         gdb.execute("set logging on")
-        gdb.execute("print %s" % exp)
+        gdb.execute(f"print {exp}")
         gdb.execute("set logging off")
         return gdb.history(0)
 
@@ -95,9 +95,7 @@ except TypeError:
         "Wrapper class for gdb.Value that allows setting extra properties."
         def __init__(self, value):
             self.gdb_value = value
-            self.__dict__ = {}
-            self.__dict__['type'] = value.type
-            self.__dict__['address'] = value.address
+            self.__dict__ = {'type': value.type, 'address': value.address}
             self.__getitem__ = value.__getitem__
 
 
@@ -108,7 +106,7 @@ class Printer_Gen(object):
             return self.re.search(str(v.basic_type)) != None
 
         def __init__(self, Printer):
-            self.name = Printer.printer_name + '-' + Printer.version
+            self.name = f'{Printer.printer_name}-{Printer.version}'
             self.enabled = True
             if hasattr(Printer, 'supports'):
                 self.re = None
@@ -178,10 +176,7 @@ def _cant_register_printer(Printer):
     return Printer
 
 def _conditionally_register_printer(condition):
-    if condition:
-        return _register_printer
-    else:
-        return _cant_register_printer
+    return _register_printer if condition else _cant_register_printer
 
 ###
 ### Individual Printers follow.
@@ -267,24 +262,22 @@ class BoostOptional:
 
     def children(self):
         initialized = self.value['m_initialized']
-        if(not initialized):
+        if not initialized:
             return self._iterator('', True)
-        else:
-            match = BoostOptional.regex.search(self.typename)
-            if match:
-                try:
-                    membertype = gdb.lookup_type(match.group(1)).pointer()
-                    member = self.value['m_storage']['dummy_']['data'].address.cast(membertype)
-                    return self._iterator(member, False)
-                except:
-                    return self._iterator('', True)
+        if match := BoostOptional.regex.search(self.typename):
+            try:
+                membertype = gdb.lookup_type(match.group(1)).pointer()
+                member = self.value['m_storage']['dummy_']['data'].address.cast(membertype)
+                return self._iterator(member, False)
+            except:
+                return self._iterator('', True)
 
     def to_string(self):
         initialized = self.value['m_initialized']
-        if(not initialized):
-            return "%s is not initialized" % self.typename
+        if (not initialized):
+            return f"{self.typename} is not initialized"
         else:
-            return "%s is initialized" % self.typename
+            return f"{self.typename} is initialized"
 
 @_register_printer
 class BoostReferenceWrapper:
@@ -298,7 +291,7 @@ class BoostReferenceWrapper:
         self.value = value
 
     def to_string(self):
-        return '(%s) %s' % (self.typename, self.value['t_'].dereference())
+        return f"({self.typename}) {self.value['t_'].dereference()}"
 
 @_register_printer
 class BoostTribool:
@@ -318,7 +311,7 @@ class BoostTribool:
             s = 'false'
         elif(state == 1):
             s = 'true'
-        return '(%s) %s' % (self.typename, s)
+        return f'({self.typename}) {s}'
 
 @_register_printer
 class BoostScopedPtr:
@@ -332,7 +325,7 @@ class BoostScopedPtr:
         self.value = value
 
     def to_string(self):
-        return '(%s) %s' % (self.typename, self.value['px'])
+        return f"({self.typename}) {self.value['px']}"
 
 @_register_printer
 class BoostSharedPtr:
@@ -347,7 +340,7 @@ class BoostSharedPtr:
 
     def to_string(self):
         if self.value['px'] == 0x0:
-            return '(%s) %s' % (self.typename, self.value['px'])
+            return f"({self.typename}) {self.value['px']}"
         countobj = self.value['pn']['pi_'].dereference()
         refcount = countobj['use_count_']
         weakcount = countobj['weak_count_']
@@ -382,19 +375,6 @@ class BoostCircular:
             crt=self.buff + (count + self.item - self.buff) % self.capa
             elem = crt.dereference()
             self.count = self.count + 1
-            return ('[%d]' % count, elem)
-
-
-
-
-            if self.item == self.last:
-                raise StopIteration
-            count = self.count
-            self.count = self.count + 1
-            elem = self.item.dereference()
-            self.item = self.item + 1
-            if self.item == self.end:
-                self.item == self.buff
             return ('[%d]' % count, elem)
 
     def __init__(self, value):
@@ -473,7 +453,7 @@ class BoostUuid:
     def to_string(self):
         u = (self.value['data'][i] for i in xrange(16))
         s = 'xxxx-xx-xx-xx-xxxxxx'.replace('x', '%02x') % tuple(u)
-        return '(%s) %s' % (self.typename, s)
+        return f'({self.typename}) {s}'
 
 ##################################################
 # boost::container::flat_set                     #
@@ -519,17 +499,14 @@ class BoostContainerFlatSet:
         return self.val["m_flat_tree"]["m_data"]["m_vect"]["members_"]["m_capacity"]
 
     def has_elements(self):
-        if self.get_pointer():
-            return True
-        else:
-            return False
+        return bool(self.get_pointer())
 
-    def to_string (self):
+    def to_string(self):
         if (self.has_elements()):
             return "boost::container::flat_set<%s> with %d elements, capacity %d" % (
                 self.element_type, self.get_size(), self.get_capacity())
         else:
-            return "empty boost::container::flat_set<%s>" % (self.element_type)
+            return f"empty boost::container::flat_set<{self.element_type}>"
 
     def children (self):
         return self.Iterator(self.get_pointer(), self.get_size())
@@ -586,18 +563,14 @@ class BoostContainerFlatMap:
         return self.val["m_flat_tree"]["m_data"]["m_vect"]["members_"]["m_capacity"]
 
     def has_elements(self):
-        if self.get_pointer():
-            return True
-        else:
-            return False
+        return bool(self.get_pointer())
 
-    def to_string (self):
+    def to_string(self):
         if (self.has_elements()):
             return "boost::container::flat_map<%s, %s> with %d elements, capacity %d" % (
                 self.key_type, self.value_type, self.get_size(), self.get_capacity())
         else:
-            return "empty boost::container::flat_map<%s, %s>" % (
-                self.key_type, self.value_type)
+            return f"empty boost::container::flat_map<{self.key_type}, {self.value_type}>"
 
     def children (self):
         return self.Iterator(self.get_pointer(), self.get_size())
@@ -620,7 +593,7 @@ class BoostContainerVectorIterator:
         if self.val["m_ptr"]:
             return self.val["m_ptr"].dereference()
         else:
-            return "uninitialized %s" % (self.val.type)
+            return f"uninitialized {self.val.type}"
 
 ##################################################
 # boost::intrusive::set                          #
@@ -638,23 +611,25 @@ def get_named_template_argument(gdb_type, arg_name):
             return None
 
 def intrusive_container_has_size_member(intrusive_container_type):
-    constant_size_arg = get_named_template_argument(intrusive_container_type, "boost::intrusive::constant_time_size")
-    if not constant_size_arg:
+    if constant_size_arg := get_named_template_argument(
+        intrusive_container_type, "boost::intrusive::constant_time_size"
+    ):
+        return str(constant_size_arg.template_argument(0)) != 'false'
+    else:
         return True
-    if str(constant_size_arg.template_argument(0)) == 'false':
-        return False
-    return True
 
 def intrusive_iterator_to_string(iterator_value):
     opttype = iterator_value.type.template_argument(0).template_argument(0)
 
-    base_hook_traits = get_named_template_argument(opttype, "boost::intrusive::detail::base_hook_traits")
-    if base_hook_traits:
+    if base_hook_traits := get_named_template_argument(
+        opttype, "boost::intrusive::detail::base_hook_traits"
+    ):
         value_type = base_hook_traits.template_argument(0)
         return iterator_value["members_"]["nodeptr_"].cast(value_type.pointer()).dereference()
 
-    member_hook_traits = get_named_template_argument(opttype, "boost::intrusive::detail::member_hook_traits")
-    if member_hook_traits:
+    if member_hook_traits := get_named_template_argument(
+        opttype, "boost::intrusive::detail::member_hook_traits"
+    ):
         value_type = member_hook_traits.template_argument(0)
         member_offset = member_hook_traits.template_argument(2).cast(gdb.lookup_type("size_t"))
         current_element_address = iterator_value["members_"]["nodeptr_"].cast(gdb.lookup_type("size_t")) - member_offset
@@ -692,9 +667,8 @@ class BoostIntrusiveSet:
         def get_element_pointer_from_node_pointer(self):
             if self.member_offset == 0:
                 return self.node
-            else:
-                current_element_address = self.node.cast(gdb.lookup_type("size_t")) - self.member_offset
-                return current_element_address.cast(self.element_pointer_type)
+            current_element_address = self.node.cast(gdb.lookup_type("size_t")) - self.member_offset
+            return current_element_address.cast(self.element_pointer_type)
 
         def next(self):
             # empty set or reached rightmost leaf
@@ -736,23 +710,21 @@ class BoostIntrusiveSet:
     def has_elements(self):
         header = self.get_header()
         first_element = header["parent_"]
-        if first_element:
-            return True
-        else:
-            return False
+        return bool(first_element)
 
-    def to_string (self):
+    def to_string(self):
         if (intrusive_container_has_size_member(self.val.type)):
             return "boost::intrusive::set<%s> with %d elements" % (self.element_type, self.get_size())
         elif (self.has_elements()):
-            return "non-empty boost::intrusive::set<%s>" % self.element_type
+            return f"non-empty boost::intrusive::set<{self.element_type}>"
         else:
-            return "empty boost::intrusive::set<%s>" % self.element_type
+            return f"empty boost::intrusive::set<{self.element_type}>"
 
-    def children (self):
+    def children(self):
         element_pointer_type = self.element_type.pointer()
-        member_hook = get_named_template_argument(self.val.type, "boost::intrusive::member_hook")
-        if member_hook:
+        if member_hook := get_named_template_argument(
+            self.val.type, "boost::intrusive::member_hook"
+        ):
             member_offset = member_hook.template_argument(2).cast(gdb.lookup_type("size_t"))
             return self.Iterator(self.get_header(), element_pointer_type, member_offset)
         else:
@@ -810,9 +782,8 @@ class BoostIntrusiveList:
         def get_element_pointer_from_node_pointer(self):
             if self.member_offset == 0:
                 return self.node
-            else:
-                current_element_address = self.node.cast(gdb.lookup_type("size_t")) - self.member_offset
-                return current_element_address.cast(self.element_pointer_type)
+            current_element_address = self.node.cast(gdb.lookup_type("size_t")) - self.member_offset
+            return current_element_address.cast(self.element_pointer_type)
 
         def next(self):
             # empty list or reached end
@@ -843,23 +814,21 @@ class BoostIntrusiveList:
         header = self.get_header()
         first_element = header["next_"]
         root_element = header.address
-        if first_element != root_element:
-            return True
-        else:
-            return False
+        return first_element != root_element
 
     def to_string(self):
         if (intrusive_container_has_size_member(self.val.type)):
             return "boost::intrusive::list<%s> with %d elements" % (self.element_type, self.get_size())
         elif (self.has_elements()):
-            return "non-empty boost::intrusive::list<%s>" % self.element_type
+            return f"non-empty boost::intrusive::list<{self.element_type}>"
         else:
-            return "empty boost::intrusive::list<%s>" % self.element_type
+            return f"empty boost::intrusive::list<{self.element_type}>"
 
     def children(self):
         element_pointer_type = self.element_type.pointer()
-        member_hook = get_named_template_argument(self.val.type, "boost::intrusive::member_hook")
-        if member_hook:
+        if member_hook := get_named_template_argument(
+            self.val.type, "boost::intrusive::member_hook"
+        ):
             member_offset = member_hook.template_argument(2).cast(gdb.lookup_type("size_t"))
             return self.Iterator(self.get_header(), element_pointer_type, member_offset)
         else:
@@ -893,7 +862,7 @@ class BoostGregorianDate:
         n = int(self.value['days_'])
         # Check for uninitialized case
         if n==2**32-2:
-            return '(%s) uninitialized' % self.typename
+            return f'({self.typename}) uninitialized'
         # Convert date number to year-month-day
         a = n + 32044
         b = (4*a + 3) / 146097
@@ -921,17 +890,17 @@ class BoostPosixTimePTime:
         n = int(self.value['time_']['time_count_']['value_'])
         # Check for uninitialized case
         if n==2**63-2:
-            return '(%s) uninitialized' % self.typename
+            return f'({self.typename}) uninitialized'
         # Check for boost::posix_time::pos_infin case
         if n==2**63-1:
-            return '(%s) positive infinity' % self.typename
+            return f'({self.typename}) positive infinity'
         # Check for boost::posix_time::neg_infin case
         if n==-2**63:
-            return '(%s) negative infinity' % self.typename
+            return f'({self.typename}) negative infinity'
         # Subtract the unix epoch from the timestamp and convert the resulting timestamp into something human readable
         unix_epoch_time = (n-210866803200000000)/1000000.0
         time_string = datetime.datetime.fromtimestamp(unix_epoch_time).strftime('%Y-%b-%d %H:%M:%S.%f')
-        return '(%s) %s' % (self.typename, time_string)
+        return f'({self.typename}) {time_string}'
 
 #
 # Some utility methods.
@@ -979,9 +948,7 @@ def _strip_inheritance_qual(s):
         return s[7:]
     if s.startswith('private '):
         return s[8:]
-    if s.startswith('protected '):
-        return s[10:]
-    return s
+    return s[10:] if s.startswith('protected ') else s
 
 def _get_subtype(basic_type, idx):
     "Return the subtype of a given type. idx can be an integer indicating the index of the subtype to be returned, or a list of such indexes, in which case a list of types is returned."
@@ -1039,13 +1006,14 @@ def _boost_multi_index_get_indexes(v):
         v.indexes.append(arg2_str[r[0]:r[1]].split('<')[0].strip())
 
 # The size in pointers of the index fields for all index types.
-_boost_multi_index_index_size = {}
-_boost_multi_index_index_size['boost::multi_index::ordered_unique'] = 3
-_boost_multi_index_index_size['boost::multi_index::ordered_non_unique'] = 3
-_boost_multi_index_index_size['boost::multi_index::hashed_unique'] = 1
-_boost_multi_index_index_size['boost::multi_index::hashed_non_unique'] = 1
-_boost_multi_index_index_size['boost::multi_index::sequenced'] = 2
-_boost_multi_index_index_size['boost::multi_index::random_access'] = 1
+_boost_multi_index_index_size = {
+    'boost::multi_index::ordered_unique': 3,
+    'boost::multi_index::ordered_non_unique': 3,
+    'boost::multi_index::hashed_unique': 1,
+    'boost::multi_index::hashed_non_unique': 1,
+    'boost::multi_index::sequenced': 2,
+    'boost::multi_index::random_access': 1,
+}
 
 #
 # The following is an experimental printer for boost::multi_index_container
@@ -1117,16 +1085,18 @@ class Boost_Multi_Index:
     print_not_supported = True
 
     @classmethod
-    def supports(self_type, v):
+    def supports(cls, v):
         if not _is_boost_multi_index(v):
             return False
         _boost_multi_index_get_indexes(v)
         if v.idx >= len(v.indexes):
             return False
-        return (self_type.print_not_supported
-                or v.indexes[v.idx] == 'boost::multi_index::ordered_unique'
-                or v.indexes[v.idx] == 'boost::multi_index::ordered_non_unique'
-                or v.indexes[v.idx] == 'boost::multi_index::sequenced')
+        return (
+            cls.print_not_supported
+            or v.indexes[v.idx] == 'boost::multi_index::ordered_unique'
+            or v.indexes[v.idx] == 'boost::multi_index::ordered_non_unique'
+            or v.indexes[v.idx] == 'boost::multi_index::sequenced'
+        )
 
     @staticmethod
     def get_val_ptr(node_ptr, index_offset):
@@ -1224,11 +1194,11 @@ class Boost_Multi_Index:
 
         @staticmethod
         def get_left_ptr(node_ptr):
-            return long(str(parse_and_eval('*((void**)' + str(node_ptr) + ' + 1)')), 16)
+            return long(str(parse_and_eval(f'*((void**){str(node_ptr)} + 1)')), 16)
 
         @staticmethod
         def get_right_ptr(node_ptr):
-            return long(str(parse_and_eval('*((void**)' + str(node_ptr) + ' + 2)')), 16)
+            return long(str(parse_and_eval(f'*((void**){str(node_ptr)} + 2)')), 16)
 
         def __init__(self, elem_type, index_offset, first, last):
             self.elem_type = elem_type
@@ -1248,37 +1218,35 @@ class Boost_Multi_Index:
             #print >> sys.stderr, 'crt: ' + hex(crt)
             if self.crt == self.last:
                 self.saw_last = True
+            elif self.get_right_ptr(self.crt) == 0:
+                # next is first ancestor from which crt is in left subtree
+                #print >> sys.stderr, 'next is an ancestor'
+                while True:
+                    old_crt = self.crt
+                    self.crt = self.get_parent_ptr(self.crt)
+                    if self.get_left_ptr(self.crt) == old_crt:
+                        break
             else:
-                if self.get_right_ptr(self.crt) != 0:
-                    # next is leftmost node in right subtree
-                    #print >> sys.stderr, 'next is in right subtree'
-                    self.crt = self.get_right_ptr(self.crt)
-                    while self.get_left_ptr(self.crt) != 0:
-                        self.crt = self.get_left_ptr(self.crt)
-                else:
-                    # next is first ancestor from which crt is in left subtree
-                    #print >> sys.stderr, 'next is an ancestor'
-                    while True:
-                        old_crt = self.crt
-                        self.crt = self.get_parent_ptr(self.crt)
-                        if self.get_left_ptr(self.crt) == old_crt:
-                            break
-                #print >> sys.stderr, 'next: ' + hex(self.crt)
+                # next is leftmost node in right subtree
+                #print >> sys.stderr, 'next is in right subtree'
+                self.crt = self.get_right_ptr(self.crt)
+                while self.get_left_ptr(self.crt) != 0:
+                    self.crt = self.get_left_ptr(self.crt)
             count = self.count
             self.count = self.count + 1
             val_ptr = Boost_Multi_Index.get_val_ptr(crt, self.index_offset)
-            return ('[%s]' % hex(int(val_ptr)),
-                    str(parse_and_eval('*(' + str(self.elem_type) + '*)'
-                                       + str(val_ptr))))
+            return f'[{hex(int(val_ptr))}]', str(
+                parse_and_eval(f'*({str(self.elem_type)}*){str(val_ptr)}')
+            )
 
     class sequenced_iterator:
         @staticmethod
         def get_prev_ptr(node_ptr):
-            return long(str(parse_and_eval('*((void**)' + str(node_ptr) + ')')), 16)
+            return long(str(parse_and_eval(f'*((void**){str(node_ptr)})')), 16)
 
         @staticmethod
         def get_next_ptr(node_ptr):
-            return long(str(parse_and_eval('*((void**)' + str(node_ptr) + ' + 1)')), 16)
+            return long(str(parse_and_eval(f'*((void**){str(node_ptr)} + 1)')), 16)
 
         def __init__(self, elem_type, index_offset, begin, end):
             self.elem_type = elem_type
@@ -1298,15 +1266,17 @@ class Boost_Multi_Index:
             count = self.count
             self.count = self.count + 1
             val_ptr = Boost_Multi_Index.get_val_ptr(crt, self.index_offset)
-            return ('[%s]' % hex(int(val_ptr)),
-                    str(parse_and_eval('*(' + str(self.elem_type) + '*)'
-                                       + str(val_ptr))))
+            return f'[{hex(int(val_ptr))}]', str(
+                parse_and_eval(f'*({str(self.elem_type)}*){str(val_ptr)}')
+            )
 
     def children(self):
         if self.empty_cont():
             return self.empty_iterator()
-        if (self.index_type == 'boost::multi_index::ordered_unique'
-            or self.index_type == 'boost::multi_index::ordered_non_unique'):
+        if self.index_type in [
+            'boost::multi_index::ordered_unique',
+            'boost::multi_index::ordered_non_unique',
+        ]:
             return self.ordered_iterator(
                 self.elem_type,
                 self.index_offset,
@@ -1321,6 +1291,4 @@ class Boost_Multi_Index:
         return self.na_iterator(self.index_type)
 
     def to_string(self):
-        if self.empty_cont():
-            return 'empty %s' % self.type_name
-        return '%s' % self.type_name
+        return f'empty {self.type_name}' if self.empty_cont() else f'{self.type_name}'

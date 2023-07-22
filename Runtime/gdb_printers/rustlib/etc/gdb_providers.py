@@ -22,13 +22,10 @@ class EnumProvider:
         fields = content.type.fields()
         self.empty = len(fields) == 0
         if not self.empty:
-            if len(fields) == 1:
-                discriminant = 0
-            else:
-                discriminant = int(content[fields[0]]) + 1
+            discriminant = 0 if len(fields) == 1 else int(content[fields[0]]) + 1
             self.active_variant = content[fields[discriminant]]
             self.name = fields[discriminant].name
-            self.full_name = "{}::{}".format(valobj.type.name, self.name)
+            self.full_name = f"{valobj.type.name}::{self.name}"
         else:
             self.full_name = valobj.type.name
 
@@ -93,7 +90,7 @@ class StdVecProvider:
         self.data_ptr = unwrap_unique_or_non_null(valobj["buf"]["ptr"])
 
     def to_string(self):
-        return "Vec(size={})".format(self.length)
+        return f"Vec(size={self.length})"
 
     def children(self):
         saw_inaccessible = False
@@ -105,7 +102,7 @@ class StdVecProvider:
                 # rust-lang/rust#64343: passing deref expr to `str` allows
                 # catching exception on garbage pointer
                 str(element_ptr.dereference())
-                yield "[{}]".format(index), element_ptr.dereference()
+                yield (f"[{index}]", element_ptr.dereference())
             except RuntimeError:
                 saw_inaccessible = True
                 yield str(index), "inaccessible"
@@ -128,12 +125,12 @@ class StdVecDequeProvider:
             self.size = self.cap + self.head - self.tail
 
     def to_string(self):
-        return "VecDeque(size={})".format(self.size)
+        return f"VecDeque(size={self.size})"
 
     def children(self):
         for index in xrange(0, self.size):
             value = (self.data_ptr + ((self.tail + index) % self.cap)).dereference()
-            yield "[{}]".format(index), value
+            yield (f"[{index}]", value)
 
     @staticmethod
     def display_hint():
@@ -151,9 +148,9 @@ class StdRcProvider:
 
     def to_string(self):
         if self.is_atomic:
-            return "Arc(strong={}, weak={})".format(int(self.strong), int(self.weak))
+            return f"Arc(strong={int(self.strong)}, weak={int(self.weak)})"
         else:
-            return "Rc(strong={}, weak={})".format(int(self.strong), int(self.weak))
+            return f"Rc(strong={int(self.strong)}, weak={int(self.weak)})"
 
     def children(self):
         yield "value", self.value
@@ -179,10 +176,7 @@ class StdRefProvider:
 
     def to_string(self):
         borrow = int(self.borrow)
-        if borrow >= 0:
-            return "Ref(borrow={})".format(borrow)
-        else:
-            return "Ref(borrow_mut={})".format(-borrow)
+        return f"Ref(borrow={borrow})" if borrow >= 0 else f"Ref(borrow_mut={-borrow})"
 
     def children(self):
         yield "*value", self.value
@@ -197,9 +191,9 @@ class StdRefCellProvider:
     def to_string(self):
         borrow = int(self.borrow)
         if borrow >= 0:
-            return "RefCell(borrow={})".format(borrow)
+            return f"RefCell(borrow={borrow})"
         else:
-            return "RefCell(borrow_mut={})".format(-borrow)
+            return f"RefCell(borrow_mut={-borrow})"
 
     def children(self):
         yield "value", self.value
@@ -228,8 +222,7 @@ def children_of_btree_map(map):
         for i in xrange(0, length + 1):
             if height > 0:
                 child_ptr = edges[i]["value"]["value"]
-                for child in children_of_node(child_ptr, height - 1):
-                    yield child
+                yield from children_of_node(child_ptr, height - 1)
             if i < length:
                 # Avoid "Cannot perform pointer math on incomplete type" on zero-sized arrays.
                 key_type_size = keys.type.sizeof
@@ -244,8 +237,7 @@ def children_of_btree_map(map):
             root = root.cast(gdb.lookup_type(root.type.name[21:-1]))
         node_ptr = root["node"]
         height = root["height"]
-        for child in children_of_node(node_ptr, height):
-            yield child
+        yield from children_of_node(node_ptr, height)
 
 
 class StdBTreeSetProvider:
@@ -253,12 +245,12 @@ class StdBTreeSetProvider:
         self.valobj = valobj
 
     def to_string(self):
-        return "BTreeSet(size={})".format(self.valobj["map"]["length"])
+        return f'BTreeSet(size={self.valobj["map"]["length"]})'
 
     def children(self):
         inner_map = self.valobj["map"]
         for i, (child, _) in enumerate(children_of_btree_map(inner_map)):
-            yield "[{}]".format(i), child
+            yield (f"[{i}]", child)
 
     @staticmethod
     def display_hint():
@@ -270,12 +262,12 @@ class StdBTreeMapProvider:
         self.valobj = valobj
 
     def to_string(self):
-        return "BTreeMap(size={})".format(self.valobj["length"])
+        return f'BTreeMap(size={self.valobj["length"]})'
 
     def children(self):
         for i, (key, val) in enumerate(children_of_btree_map(self.valobj)):
-            yield "key{}".format(i), key
-            yield "val{}".format(i), val
+            yield (f"key{i}", key)
+            yield (f"val{i}", val)
 
     @staticmethod
     def display_hint():
@@ -314,9 +306,9 @@ class StdOldHashMapProvider:
 
     def to_string(self):
         if self.show_values:
-            return "HashMap(size={})".format(self.size)
+            return f"HashMap(size={self.size})"
         else:
-            return "HashSet(size={})".format(self.size)
+            return f"HashSet(size={self.size})"
 
     def children(self):
         start = int(self.data_ptr) & ~1
@@ -334,10 +326,10 @@ class StdOldHashMapProvider:
             idx = table_index & self.capacity_mask
             element = (pairs_start + idx).dereference()
             if self.show_values:
-                yield "key{}".format(index), element[ZERO_FIELD]
-                yield "val{}".format(index), element[FIRST_FIELD]
+                yield (f"key{index}", element[ZERO_FIELD])
+                yield (f"val{index}", element[FIRST_FIELD])
             else:
-                yield "[{}]".format(index), element[ZERO_FIELD]
+                yield (f"[{index}]", element[ZERO_FIELD])
 
     def display_hint(self):
         return "map" if self.show_values else "array"
@@ -383,9 +375,9 @@ class StdHashMapProvider:
 
     def to_string(self):
         if self.show_values:
-            return "HashMap(size={})".format(self.size)
+            return f"HashMap(size={self.size})"
         else:
-            return "HashSet(size={})".format(self.size)
+            return f"HashSet(size={self.size})"
 
     def children(self):
         pairs_start = self.data_ptr
@@ -396,10 +388,10 @@ class StdHashMapProvider:
                 idx = -(idx + 1)
             element = (pairs_start + idx).dereference()
             if self.show_values:
-                yield "key{}".format(index), element[ZERO_FIELD]
-                yield "val{}".format(index), element[FIRST_FIELD]
+                yield (f"key{index}", element[ZERO_FIELD])
+                yield (f"val{index}", element[FIRST_FIELD])
             else:
-                yield "[{}]".format(index), element[ZERO_FIELD]
+                yield (f"[{index}]", element[ZERO_FIELD])
 
     def display_hint(self):
         return "map" if self.show_values else "array"
