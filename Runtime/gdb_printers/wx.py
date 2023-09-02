@@ -99,8 +99,7 @@ class wxFileNamePrinter:
         # that it requires a live inferior process and so doesn't work when
         # debugging using only a core file. If this ever becomes a serious
         # problem, this should be rewritten to use m_dirs and m_name and m_ext.
-        return gdb.parse_and_eval('((wxFileName*)%s)->GetFullPath(0)' %
-                                  self.val.address)
+        return gdb.parse_and_eval(f'((wxFileName*){self.val.address})->GetFullPath(0)')
 
 class wxXYPrinterBase:
     def __init__(self, val):
@@ -137,12 +136,9 @@ def wxLookupFunction(val):
              'wxSize',
              'wxRect']
 
-    for t in types:
-        if val.type.tag == t:
-            # Not sure if this is the best name to create the object of a class
-            # by name but at least it beats eval()
-            return globals()[t + 'Printer'](val)
-
-    return None
+    return next(
+        (globals()[f'{t}Printer'](val) for t in types if val.type.tag == t),
+        None,
+    )
 
 gdb.pretty_printers.append(wxLookupFunction)

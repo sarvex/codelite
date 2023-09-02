@@ -33,10 +33,7 @@ else:
 
         def next(self):
             return type(self).__next__(self)
-if PY3:
-    unichr = chr
-else:
-    unichr = unichr
+unichr = chr if PY3 else unichr
 
 # END
 
@@ -75,17 +72,16 @@ class FunctionLookup:
 
         # Get the type name.
         typename = type.tag
-        if typename == None:
+        if typename is None:
             return None
 
-        # Iterate over local dictionary of types to determine
-        # if a printer is registered for that type.  Return an
-        # instantiation of the printer if found.
-        for function in self.pretty_printers_dict:
-            if function.search (typename):
-                return self.pretty_printers_dict[function](val)
-
-        # Cannot find a pretty printer.  Return None.
-        return None
+        return next(
+            (
+                self.pretty_printers_dict[function](val)
+                for function in self.pretty_printers_dict
+                if function.search(typename)
+            ),
+            None,
+        )
 
 # END
